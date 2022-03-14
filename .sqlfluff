@@ -1,0 +1,6 @@
+[sqlfluff]
+exclude_rules = L031
+
+[sqlfluff:templater:jinja:context]
+perf='perf.parquet'
+acq=my_table='acq.parquet'
