@@ -75,7 +75,7 @@ SELECT
 FROM
     (SELECT
         orig_date,
-	stmt_number,
+        stmt_number,
         avg(borrower_credit_score) AS avg_credit_score,
         sum(dq30) AS dq30_count,
         sum(dq90) AS dq90_count,
@@ -93,7 +93,7 @@ FROM
             performance
         WHERE
             stmt_number >= 1
-        GROUP BY orig_date, 
+        GROUP BY orig_date,
                  stmt_number) AS agg,
     (SELECT
         orig_year,
