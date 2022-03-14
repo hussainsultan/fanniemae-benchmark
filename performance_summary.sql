@@ -63,11 +63,19 @@ acquisition AS (
 
 SELECT
     agg.orig_date,
-    loans.loan_count
+    agg.stmt_number,
+    loans.loan_count,
+    agg.avg_credit_score,
+    agg.dq30_count,
+    agg.dq90_count,
+    agg.dq180_count,
+    agg.upb_sum,
+    agg.bad_cnt,
+    agg.dollar_bad
 FROM
     (SELECT
         orig_date,
-        stmt_number,
+	stmt_number,
         avg(borrower_credit_score) AS avg_credit_score,
         sum(dq30) AS dq30_count,
         sum(dq90) AS dq90_count,
@@ -84,12 +92,12 @@ FROM
         FROM
             performance
         WHERE
-            stmt_number >= 0
-        GROUP BY orig_date,
-            stmt_number) AS agg,
+            stmt_number >= 1
+        GROUP BY orig_date, 
+                 stmt_number) AS agg,
     (SELECT
-        orig_date,
+        orig_year,
         loan_count
         FROM acquisition) AS loans
 WHERE
-    agg.orig_date = loans.orig_date;
+    agg.orig_date = loans.orig_year;

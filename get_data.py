@@ -4,7 +4,7 @@ URL = "http://rapidsai-data.s3-website.us-east-2.amazonaws.com/notebook-mortgage
 
 
 def main():
-    wget.download(URL, "../data/")
+    wget.download(URL, "data/")
 
 
 if __name__ == "__main__":
