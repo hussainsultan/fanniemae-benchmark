@@ -2,7 +2,6 @@ WITH performance AS (
     SELECT
         perf.loan_id,
         book.orig_date,
-        first_statements.book_month,
         perf.loan_age AS stmt_number,
         book.borrower_credit_score,
         perf.disposition_date,
@@ -34,56 +33,26 @@ WITH performance AS (
         (
             SELECT
                 loan_id,
-                strftime(
-                    strptime(monthly_reporting_period, '%Y-%d-%m'), '%Y-%m'
-                ) AS book_month
-            FROM {{ perf|tojson }} WHERE loan_age = 0
-        ) AS first_statements,
-        (
-            SELECT
-                loan_id,
                 borrower_credit_score,
-                str_split(orig_date, '/')[1] AS orig_date
+                str_split(orig_date, '/')[1]  AS orig_date
             FROM {{ acq|tojson }}
         ) AS book
     WHERE
-        perf.loan_id = first_statements.loan_id
-        AND first_statements.loan_id = book.loan_id
-),
-
-acquisition AS (
-    SELECT
-        str_split(orig_date, '/')[1] AS orig_year,
-        count(loan_id) AS loan_count
-    FROM
-        {{ acq|tojson }}
-    GROUP BY
-        orig_year
+        perf.loan_id = book.loan_id
 )
-
 SELECT
     agg.orig_date,
     agg.stmt_number,
     loans.loan_count,
     agg.avg_credit_score,
-    agg.dq30_count,
-    agg.dq90_count,
-    agg.dq180_count,
     agg.upb_sum,
-    agg.bad_cnt,
     agg.dollar_bad
 FROM
     (SELECT
         orig_date,
         stmt_number,
         avg(borrower_credit_score) AS avg_credit_score,
-        sum(dq30) AS dq30_count,
-        sum(dq90) AS dq90_count,
-        sum(dq180) AS dq180_count,
-        sum(CASE
-            WHEN disposition_date IS NOT NULL THEN bad
-            ELSE 0
-            END) AS bad_cnt,
+
         sum(CASE
             WHEN disposition_date IS NOT NULL THEN current_actual_upb
             ELSE 0
@@ -96,8 +65,11 @@ FROM
         GROUP BY orig_date,
                  stmt_number) AS agg,
     (SELECT
-        orig_year,
-        loan_count
-        FROM acquisition) AS loans
+        str_split(orig_date, '/')[1] AS orig_year,
+        count(loan_id) AS loan_count
+    FROM
+        {{ acq|tojson }}
+    GROUP BY
+        orig_year) AS loans
 WHERE
     agg.orig_date = loans.orig_year;
