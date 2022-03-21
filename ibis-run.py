@@ -21,13 +21,6 @@ def main():
         acq.loan_id, acq.orig_date.split("/")[1].name("year"), acq.borrower_credit_score
     ]
     joined = acq.inner_join(perf, acq.loan_id == perf.loan_id)
-    dq30 = (
-        ibis.case()
-        .when(perf.current_loan_delinquency_status > 1, 1)
-        .else_(0)
-        .end()
-        .name("dq30")
-    )
 
     chargeoffs = (
         ibis.case()
@@ -45,10 +38,10 @@ def main():
         perf.zero_balance_code.isin(["02", "03", "09", "15"])
         & (perf.disposition_date.notnull())
     ).ifelse(perf.current_actual_upb, 0)
+
     loans = joined.mutate(chargeoffs=chargeoffs, dollar_co=dollar_co).projection(
         [
             perf.loan_id,
-            # dq30,
             chargeoffs,
             dollar_co.name("dollar_co"),
             perf.loan_age,
