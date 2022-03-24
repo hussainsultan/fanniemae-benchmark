@@ -1,16 +1,15 @@
+import time
+import tracemalloc
+import warnings
 from pathlib import Path
 
 import duckdb
 import ibis
-from rich import print
-import warnings
-
-from rich.console import Console
-from rich.syntax import Syntax
-from rich.markdown import Markdown
 from memory_profiler import memory_usage
-
-import tracemalloc
+from rich import print
+from rich.console import Console
+from rich.markdown import Markdown
+from rich.syntax import Syntax
 
 warnings.filterwarnings("ignore")
 
@@ -23,6 +22,7 @@ def create_db():
 
 
 def main():
+    console = Console()
     if not Path("mortgage.db").is_file():
         create_db()
     db = ibis.duckdb.connect("mortgage.db")
@@ -87,20 +87,17 @@ def main():
         ]
     )
     sql = summary.compile().compile(compile_kwargs={"literal_binds": True})
-    tracemalloc.start()
 
-    result = summary.execute()
-    snapshot = tracemalloc.get_traced_memory()
-
-    console = Console()
-    H1 = """ # Ibis Compiled SQL """
     syntax = Syntax(str(sql), "sql")
-    console.print(Markdown(H1))
     console.print(syntax)
-    console.print(result)
-    console.print(snapshot)
+    tracemalloc.start()
+    start_time = time.time()
+    result = summary.execute()
+    total_time = time.time() - start_time
+    snapshot = tracemalloc.get_traced_memory()
+    console.print(f"Peak memory usage: {snapshot[1]} kb")
+    console.print(f"Total Time: {total_time:0.2f} seconds")
 
 
-    
 if __name__ == "__main__":
     main()
