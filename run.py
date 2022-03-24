@@ -5,7 +5,6 @@ from pathlib import Path
 
 import duckdb
 import ibis
-from memory_profiler import memory_usage
 from rich import print
 from rich.console import Console
 from rich.markdown import Markdown
