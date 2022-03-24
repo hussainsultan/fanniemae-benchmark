@@ -2,12 +2,14 @@ import time
 import warnings
 from pathlib import Path
 
+import click
 import duckdb
 import ibis
+from jinja2 import Template
+from memory_profiler import profile
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.syntax import Syntax
-from memory_profiler import profile
 
 warnings.filterwarnings("ignore")
 
@@ -19,15 +21,7 @@ def create_db():
     conn.close()
 
 
-@profile
-def execute(expr):
-    return expr.execute()
-
-
-def main():
-    console = Console()
-    if not Path("mortgage.db").is_file():
-        create_db()
+def generate_summary_expr():
     db = ibis.duckdb.connect("mortgage.db")
     perf = db.table("perf")
     acq = db.table("acq")
@@ -89,15 +83,45 @@ def main():
             summary.dollar_co,
         ]
     )
-    sql = summary.compile().compile(compile_kwargs={"literal_binds": True})
+    del db
+    return summary
+
+
+def generate_summary_sql():
+    with open("performance_summary.sql") as f:
+        template = Template(f.read())
+    return template.render(perf="data/perf.parquet", acq="data/acq.parquet")
+
+
+@profile
+def execute(expr):
+    conn = duckdb.connect("mortgage.db")
+    result = conn.execute(str(expr)).fetchdf()
+    conn.close()
+    return result
+
+
+@click.command()
+@click.option("--mode", default="sql")
+def main(mode):
+    console = Console()
+    if not Path("mortgage.db").is_file():
+        create_db()
+    if mode == "ibis":
+        summary = generate_summary_expr()
+        sql = summary.compile().compile(compile_kwargs={"literal_binds": True})
+    else:
+        sql = generate_summary_sql()
 
     syntax = Syntax(str(sql), "sql")
+
     console.print(syntax)
     console.print("Executing")
     start_time = time.time()
-    result = execute(summary)
+    result = execute(sql)
     total_time = time.time() - start_time
     console.print(f"Total time: {total_time:0.2f} seconds")
+
 
 if __name__ == "__main__":
     main()
