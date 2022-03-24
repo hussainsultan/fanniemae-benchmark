@@ -2,6 +2,17 @@ from pathlib import Path
 
 import duckdb
 import ibis
+from rich import print
+import warnings
+
+from rich.console import Console
+from rich.syntax import Syntax
+from rich.markdown import Markdown
+from memory_profiler import memory_usage
+
+import tracemalloc
+
+warnings.filterwarnings("ignore")
 
 
 def create_db():
@@ -75,9 +86,21 @@ def main():
             summary.dollar_co,
         ]
     )
-    print(summary.compile().compile(compile_kwargs={"literal_binds": True}))
-    print(summary.execute().head())
+    sql = summary.compile().compile(compile_kwargs={"literal_binds": True})
+    tracemalloc.start()
+
+    result = summary.execute()
+    snapshot = tracemalloc.get_traced_memory()
+
+    console = Console()
+    H1 = """ # Ibis Compiled SQL """
+    syntax = Syntax(str(sql), "sql")
+    console.print(Markdown(H1))
+    console.print(syntax)
+    console.print(result)
+    console.print(snapshot)
 
 
+    
 if __name__ == "__main__":
     main()
