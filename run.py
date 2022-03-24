@@ -1,14 +1,13 @@
 import time
-import tracemalloc
 import warnings
 from pathlib import Path
 
 import duckdb
 import ibis
-from rich import print
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.syntax import Syntax
+from memory_profiler import profile
 
 warnings.filterwarnings("ignore")
 
@@ -18,6 +17,11 @@ def create_db():
     conn.execute("CREATE VIEW perf AS SELECT * FROM 'data/perf.parquet'")
     conn.execute("CREATE VIEW acq AS SELECT * FROM 'data/acq.parquet'")
     conn.close()
+
+
+@profile
+def execute(expr):
+    return expr.execute()
 
 
 def main():
@@ -89,14 +93,11 @@ def main():
 
     syntax = Syntax(str(sql), "sql")
     console.print(syntax)
-    tracemalloc.start()
+    console.print("Executing")
     start_time = time.time()
-    result = summary.execute()
+    result = execute(summary)
     total_time = time.time() - start_time
-    snapshot = tracemalloc.get_traced_memory()
-    console.print(f"Peak memory usage: {snapshot[1]} kb")
-    console.print(f"Total Time: {total_time:0.2f} seconds")
-
+    console.print(f"Total time: {total_time:0.2f} seconds")
 
 if __name__ == "__main__":
     main()
