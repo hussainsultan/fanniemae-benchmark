@@ -3,7 +3,7 @@ import duckdb
 if __name__ == "__main__":
     conn = duckdb.connect()
     conn.execute(
-       """ COPY (SELECT * from read_csv_auto('../data/raw/perf/Performance*.txt*', 
+       """ COPY (SELECT * from read_csv_auto('../data/perf/Performance*.txt*', 
     columns = { 'loan_id': 'BIGINT',
     'monthly_reporting_period' : 'VARCHAR',
     'servicer': 'VARCHAR',
@@ -38,7 +38,7 @@ if __name__ == "__main__":
    )
 
     conn.execute(
-        query=""" COPY ( SELECT * FROM read_csv_auto('../data/raw/acq/*.txt*',
+        query=""" COPY ( SELECT * FROM read_csv_auto('../data/acq/*.txt*',
     columns={'loan_id': 'int64',
          'orig_channel': 'str',
          'seller_name': 'str',

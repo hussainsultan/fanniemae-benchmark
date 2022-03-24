@@ -4,6 +4,7 @@ URL = "http://rapidsai-data.s3-website.us-east-2.amazonaws.com/notebook-mortgage
 
 
 def main():
+    print("Warning: Downloading a very large file (~25GB)"
     wget.download(URL, "data/")
 
 
