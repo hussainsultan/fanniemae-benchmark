@@ -5,3 +5,5 @@ click
 git+https://github.com/ibis-project/ibis.git@master
 jinja2
 rich
+dask[bag]
+wget
