@@ -14,10 +14,12 @@ from rich.syntax import Syntax
 warnings.filterwarnings("ignore")
 
 
-def create_db():
+def create_db(datadir):
     conn = duckdb.connect("mortgage.db")
-    conn.execute("CREATE VIEW perf AS SELECT * FROM 'data/perf.parquet'")
-    conn.execute("CREATE VIEW acq AS SELECT * FROM 'data/acq.parquet'")
+    perf_path = datadir / "perf/*.parquet"
+    acq_path = datadir / "acq/*.parquet"
+    conn.execute(f"CREATE VIEW perf AS SELECT * FROM '{perf_path}'")
+    conn.execute(f"CREATE VIEW acq AS SELECT * FROM '{acq_path}'")
     conn.close()
 
 
@@ -87,10 +89,12 @@ def generate_summary_expr():
     return summary
 
 
-def generate_summary_sql():
+def generate_summary_sql(datadir):
     with open("performance_summary.sql") as f:
         template = Template(f.read())
-    return template.render(perf="data/perf.parquet", acq="data/acq.parquet")
+    return template.render(
+        perf=str(datadir / "perf/*.parquet"), acq=str(datadir / "acq/*.parquet")
+    )
 
 
 @profile
@@ -102,16 +106,18 @@ def execute(expr):
 
 
 @click.command()
+@click.option("--datadir", default="data")
 @click.option("--mode", default="sql")
-def main(mode):
+def main(mode, datadir):
+    datadir = Path(datadir)
     console = Console()
     if not Path("mortgage.db").is_file():
-        create_db()
+        create_db(datadir)
     if mode == "ibis":
         summary = generate_summary_expr()
         sql = summary.compile().compile(compile_kwargs={"literal_binds": True})
     else:
-        sql = generate_summary_sql()
+        sql = generate_summary_sql(datadir)
 
     syntax = Syntax(str(sql), "sql")
 
