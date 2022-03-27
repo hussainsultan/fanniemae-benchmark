@@ -1,3 +1,7 @@
+import datetime
+import json
+import platform
+import sys
 import time
 import warnings
 from pathlib import Path
@@ -5,11 +9,9 @@ from pathlib import Path
 import click
 import duckdb
 import ibis
+import psutil
 from jinja2 import Template
-from memory_profiler import profile
-from rich.console import Console
-from rich.markdown import Markdown
-from rich.syntax import Syntax
+from memory_profiler import memory_usage
 
 warnings.filterwarnings("ignore")
 
@@ -18,12 +20,13 @@ def create_db(datadir):
     conn = duckdb.connect("mortgage.db")
     perf_path = datadir / "perf/*.parquet"
     acq_path = datadir / "acq/*.parquet"
-    conn.execute(f"CREATE VIEW perf AS SELECT * FROM '{perf_path}'")
-    conn.execute(f"CREATE VIEW acq AS SELECT * FROM '{acq_path}'")
+    conn.execute(f"CREATE OR REPLACE VIEW perf AS SELECT * FROM '{perf_path}'")
+    conn.execute(f"CREATE OR REPLACE VIEW acq AS SELECT * FROM '{acq_path}'")
     conn.close()
 
 
-def generate_summary_expr():
+def generate_summary_expr(datadir):
+    create_db(datadir)
     db = ibis.duckdb.connect("mortgage.db")
     perf = db.table("perf")
     acq = db.table("acq")
@@ -97,12 +100,22 @@ def generate_summary_sql(datadir):
     )
 
 
-@profile
 def execute(expr):
     conn = duckdb.connect("mortgage.db")
-    result = conn.execute(str(expr)).fetchdf()
+    result = conn.execute(str(expr)).fetchall()
     conn.close()
     return result
+
+
+def platform_info():
+    return {
+        "machine": platform.machine(),
+        "version": platform.version(),
+        "platform": platform.platform(),
+        "system": platform.system(),
+        "cpu_count": psutil.cpu_count(),
+        "processor": platform.processor(),
+    }
 
 
 @click.command()
@@ -110,23 +123,30 @@ def execute(expr):
 @click.option("--mode", default="sql")
 def main(mode, datadir):
     datadir = Path(datadir)
-    console = Console()
-    if not Path("mortgage.db").is_file():
-        create_db(datadir)
     if mode == "ibis":
-        summary = generate_summary_expr()
+        summary = generate_summary_expr(datadir)
         sql = summary.compile().compile(compile_kwargs={"literal_binds": True})
     else:
         sql = generate_summary_sql(datadir)
+    row_count_perf = execute("select count(*) from perf")[0][0]
+    row_count_acq = execute("select count(*) from acq")[0][0]
 
-    syntax = Syntax(str(sql), "sql")
-
-    console.print(syntax)
-    console.print("Executing")
     start_time = time.time()
-    result = execute(sql)
+    mem = memory_usage((execute, (sql,)))
     total_time = time.time() - start_time
-    console.print(f"Total time: {total_time:0.2f} seconds")
+
+    data = {
+        **platform_info(),
+        "run_date": datetime.datetime.now.strftime("%d/%m/%Y %H:%M:%S"),
+        "total_time": total_time,
+        "row_count_perf": row_count_perf,
+        "row_count_acq": row_count_acq,
+        "max_memory_usage": max(mem),
+        "incremental_memory_usage": mem[-1] - mem[0],
+        "sql": " ".join(str(sql).split()),
+    }
+    json_data = json.dumps(data)
+    sys.stdout.write(json_data)
 
 
 if __name__ == "__main__":
