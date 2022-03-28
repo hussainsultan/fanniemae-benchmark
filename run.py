@@ -26,7 +26,6 @@ def create_db(datadir):
 
 
 def generate_summary_expr(datadir):
-    create_db(datadir)
     db = ibis.duckdb.connect("mortgage.db")
     perf = db.table("perf")
     acq = db.table("acq")
@@ -123,6 +122,7 @@ def platform_info():
 @click.option("--mode", default="sql")
 def main(mode, datadir):
     datadir = Path(datadir)
+    create_db(datadir)
     if mode == "ibis":
         summary = generate_summary_expr(datadir)
         sql = summary.compile().compile(compile_kwargs={"literal_binds": True})
