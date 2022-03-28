@@ -137,7 +137,7 @@ def main(mode, datadir):
 
     data = {
         **platform_info(),
-        "run_date": datetime.datetime.now.strftime("%d/%m/%Y %H:%M:%S"),
+        "run_date": datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
         "total_time": total_time,
         "row_count_perf": row_count_perf,
         "row_count_acq": row_count_acq,
