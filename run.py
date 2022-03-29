@@ -1,7 +1,6 @@
 import datetime
 import json
 import platform
-import sys
 import time
 import warnings
 from pathlib import Path

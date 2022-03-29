@@ -1,13 +1,13 @@
 import glob
 import tarfile
+from pathlib import Path
+
 import click
 import dask.bag as db
 import pyarrow
 import pyarrow.csv as pc
 import pyarrow.parquet as pq
 import wget
-
-from pathlib import Path
 
 LINKS = {
     1: "http://rapidsai-data.s3-website.us-east-2.amazonaws.com/notebook-mortgage-data/mortgage_2000.tgz",
