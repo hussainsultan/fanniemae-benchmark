@@ -24,7 +24,7 @@ def create_db(datadir):
     conn.close()
 
 
-def generate_summary_expr(datadir):
+def summary_expr(datadir):
     db = ibis.duckdb.connect("mortgage.db")
     perf = db.table("perf")
     acq = db.table("acq")
@@ -90,12 +90,19 @@ def generate_summary_expr(datadir):
     return summary
 
 
-def generate_summary_sql(datadir):
+def summary_sql(datadir):
     with open("performance_summary.sql") as f:
         template = Template(f.read())
     return template.render(
         perf=str(datadir / "perf/*.parquet"), acq=str(datadir / "acq/*.parquet")
     )
+
+
+def window_sql(datadir):
+    perf_path = datadir / "perf/*.parquet"
+    acq_path = datadir / "acq/*.parquet"
+    sql = f"select count(*) from (select RANK() OVER (PARTITION BY loan_id ORDER BY monthly_reporting_period) as number from '{perf_path}')"
+    return sql
 
 
 def execute(expr, threads=8):
@@ -119,27 +126,34 @@ def platform_info():
 
 
 @click.command()
+@click.option("--threads", default=False)
 @click.option("--datadir", default="data")
 @click.option("--mode", default="sql")
-def main(mode, datadir):
+def main(mode, datadir, threads):
     datadir = Path(datadir)
     create_db(datadir)
     if mode == "ibis":
-        summary = generate_summary_expr(datadir)
+        summary = summary_expr(datadir)
         sql = summary.compile().compile(compile_kwargs={"literal_binds": True})
     else:
-        sql = generate_summary_sql(datadir)
+        sql = summary_sql(datadir)
     row_count_perf = execute("select count(*) from perf")[0][0]
     row_count_acq = execute("select count(*) from acq")[0][0]
+
+    if threads:
+        runs = range(2, psutil.cpu_count() + 2, 2)
+    else:
+        runs = [psutil.cpu_count()]
+
     result = []
-    for threads in range(2, psutil.cpu_count() + 2, 2):
+    for thread in runs:
         start_time = time.time()
         mem = memory_usage(
             (
                 execute,
                 (
                     sql,
-                    threads,
+                    thread,
                 ),
             )
         )
@@ -147,7 +161,7 @@ def main(mode, datadir):
 
         data = {
             **platform_info(),
-            "threads": threads,
+            "threads": thread,
             "run_date": datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
             "total_time": total_time,
             "row_count_perf": row_count_perf,
