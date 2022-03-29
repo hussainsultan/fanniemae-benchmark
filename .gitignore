@@ -1,2 +1,5 @@
 data/*
+16_year_data/*
 *.pyc
+.DS_Store
+mortgage.db
