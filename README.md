@@ -10,6 +10,6 @@ mkdir data && python prepare.py --years=1 --datadir=data
 ### Run Summary Benchmark
 
 ```
-python run.py --mode=ibis
+python run.py --mode=sql --datadir=data --threads=False
 ```
 
