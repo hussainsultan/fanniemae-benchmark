@@ -40,7 +40,7 @@ def main(years, datadir):
 
 def convert_csv(f):
     columns = {
-        "loan_id": pyarrow.float64(),
+        "loan_id": pyarrow.int64(),
         "monthly_reporting_period": pyarrow.string(),
         "servicer": pyarrow.string(),
         "interest_rate": pyarrow.float64(),
@@ -87,7 +87,7 @@ def convert_csv(f):
 
 def convert_acq(f):
     columns = {
-        "loan_id": pyarrow.float64(),
+        "loan_id": pyarrow.int64(),
         "orig_channel": pyarrow.string(),
         "seller_name": pyarrow.string(),
         "orig_interest_rate": pyarrow.float64(),

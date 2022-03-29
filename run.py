@@ -99,8 +99,9 @@ def generate_summary_sql(datadir):
     )
 
 
-def execute(expr):
+def execute(expr, threads=8):
     conn = duckdb.connect("mortgage.db")
+    conn.execute(f"PRAGMA threads={threads}")
     result = conn.execute(str(expr)).fetchall()
     conn.close()
     return result
@@ -113,6 +114,7 @@ def platform_info():
         "platform": platform.platform(),
         "system": platform.system(),
         "cpu_count": psutil.cpu_count(),
+        "memory": psutil.virtual_memory().total,
         "processor": platform.processor(),
     }
 
@@ -130,23 +132,33 @@ def main(mode, datadir):
         sql = generate_summary_sql(datadir)
     row_count_perf = execute("select count(*) from perf")[0][0]
     row_count_acq = execute("select count(*) from acq")[0][0]
+    result = []
+    for threads in range(2, psutil.cpu_count() + 2, 2):
+        start_time = time.time()
+        mem = memory_usage(
+            (
+                execute,
+                (
+                    sql,
+                    threads,
+                ),
+            )
+        )
+        total_time = time.time() - start_time
 
-    start_time = time.time()
-    mem = memory_usage((execute, (sql,)))
-    total_time = time.time() - start_time
-
-    data = {
-        **platform_info(),
-        "run_date": datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-        "total_time": total_time,
-        "row_count_perf": row_count_perf,
-        "row_count_acq": row_count_acq,
-        "max_memory_usage": max(mem),
-        "incremental_memory_usage": mem[-1] - mem[0],
-        "sql": " ".join(str(sql).split()),
-    }
-    json_data = json.dumps(data)
-    sys.stdout.write(json_data)
+        data = {
+            **platform_info(),
+            "threads": threads,
+            "run_date": datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+            "total_time": total_time,
+            "row_count_perf": row_count_perf,
+            "row_count_acq": row_count_acq,
+            "max_memory_usage": max(mem),
+            "incremental_memory_usage": mem[-1] - mem[0],
+            "sql": " ".join(str(sql).split()),
+        }
+        result.append(data)
+    print(json.dumps(result))
 
 
 if __name__ == "__main__":
