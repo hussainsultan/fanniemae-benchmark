@@ -3,7 +3,7 @@ import duckdb
 if __name__ == "__main__":
     conn = duckdb.connect()
     conn.execute(
-       """ COPY (SELECT * from read_csv_auto('../data/perf/Performance*.txt*', 
+        """ COPY (SELECT * from read_csv_auto('data/raw/perf/Performance*.txt*', 
     columns = { 'loan_id': 'BIGINT',
     'monthly_reporting_period' : 'VARCHAR',
     'servicer': 'VARCHAR',
@@ -34,11 +34,11 @@ if __name__ == "__main__":
     'principal_forgiveness_upb': 'VARCHAR',
     'repurchase_make_whole_proceeds_flag': 'VARCHAR',
     'foreclosure_principal_write_off_amount': 'VARCHAR',
-    'servicing_activity_indicator': 'VARCHAR' })) TO '../data/perf.parquet' (FORMAT 'parquet'); """
-   )
+    'servicing_activity_indicator': 'VARCHAR' })) TO 'data/raw/perf.parquet' (FORMAT 'parquet'); """
+    )
 
     conn.execute(
-        query=""" COPY ( SELECT * FROM read_csv_auto('../data/acq/*.txt*',
+        query=""" COPY ( SELECT * FROM read_csv_auto('data/raw/acq/*.txt*',
     columns={'loan_id': 'int64',
          'orig_channel': 'str',
          'seller_name': 'str',
@@ -63,5 +63,5 @@ if __name__ == "__main__":
          'product_type': 'str',
          'coborrow_credit_score': 'float64',
          'mortgage_insurance_type': 'float64',
-         'relocation_mortgage_indicator': 'str'})) TO '../data/acq.parquet' (FORMAT 'parquet');"""
+         'relocation_mortgage_indicator': 'str'})) TO 'data/raw/acq.parquet' (FORMAT 'parquet');"""
     )
