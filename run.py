@@ -91,7 +91,7 @@ def summary_expr(datadir):
 
 
 def summary_sql(datadir):
-    with open("performance_summary.sql") as f:
+    with open("summary.sql") as f:
         template = Template(f.read())
     return template.render(
         perf=str(datadir / "perf/*.parquet"), acq=str(datadir / "acq/*.parquet")
