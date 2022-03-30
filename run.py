@@ -126,7 +126,7 @@ def platform_info():
 
 
 @click.command()
-@click.option("--threads", default=False)
+@click.option("--threads", default=psutil.cpu_count())
 @click.option("--datadir", default="data")
 @click.option("--mode", default="sql")
 def main(mode, datadir, threads):
@@ -140,28 +140,21 @@ def main(mode, datadir, threads):
     row_count_perf = execute("select count(*) from perf")[0][0]
     row_count_acq = execute("select count(*) from acq")[0][0]
 
-    if threads:
-        runs = range(2, psutil.cpu_count() + 2, 2)
-    else:
-        runs = [psutil.cpu_count()]
-
-    result = []
-    for thread in runs:
-        start_time = time.time()
-        mem = memory_usage(
+    start_time = time.time()
+    mem = memory_usage(
             (
                 execute,
                 (
                     sql,
-                    thread,
+                    threads,
                 ),
             )
         )
-        total_time = time.time() - start_time
+    total_time = time.time() - start_time
 
-        data = {
+    data = {
             **platform_info(),
-            "threads": thread,
+            "threads": threads,
             "run_date": datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
             "total_time": total_time,
             "row_count_perf": row_count_perf,
@@ -170,8 +163,7 @@ def main(mode, datadir, threads):
             "incremental_memory_usage": mem[-1] - mem[0],
             "sql": " ".join(str(sql).split()),
         }
-        result.append(data)
-    print(json.dumps(result))
+    print(json.dumps(data))
 
 
 if __name__ == "__main__":

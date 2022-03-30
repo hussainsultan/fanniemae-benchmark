@@ -20,9 +20,10 @@ LINKS = {
 
 
 @click.command()
+@click.option("--with-float64", default=False)
 @click.option("--years", default=1)
 @click.option("--datadir", default="data")
-def main(years, datadir):
+def main(years, datadir,with_float64):
     link = LINKS[years]
     print("Downloading ...")
     wget.download(link, datadir)
@@ -32,15 +33,15 @@ def main(years, datadir):
     tar.close()
     print("Converting to parquet ...")
     extracted_files = (Path(datadir) / "perf").glob("*.txt*")
-    db.from_sequence(extracted_files).map(convert_csv).compute()
+    db.from_sequence(extracted_files).map(convert_csv,(with_float64,)).compute()
 
     extracted_files = (Path(datadir) / "acq").glob("*.txt*")
     db.from_sequence(extracted_files).map(convert_acq).compute()
 
 
-def convert_csv(f):
+def convert_csv(f, with_float64=False):
     columns = {
-        "loan_id": pyarrow.int64(),
+        "loan_id": [pyarrow.float64() if with_float64 else pyarrow.int64()][0],
         "monthly_reporting_period": pyarrow.string(),
         "servicer": pyarrow.string(),
         "interest_rate": pyarrow.float64(),
