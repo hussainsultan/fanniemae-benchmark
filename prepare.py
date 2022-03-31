@@ -1,6 +1,7 @@
 import glob
 import tarfile
 from pathlib import Path
+import sys
 
 import click
 import dask.bag as db
@@ -19,29 +20,9 @@ LINKS = {
 }
 
 
-@click.command()
-@click.option("--with-float64", default=False)
-@click.option("--years", default=1)
-@click.option("--datadir", default="data")
-def main(years, datadir,with_float64):
-    link = LINKS[years]
-    print("Downloading ...")
-    wget.download(link, datadir)
-    print("Extracting ...")
-    tar = tarfile.open(Path(datadir) / link.split("/")[-1])
-    tar.extractall(datadir)
-    tar.close()
-    print("Converting to parquet ...")
-    extracted_files = (Path(datadir) / "perf").glob("*.txt*")
-    db.from_sequence(extracted_files).map(convert_csv,(with_float64,)).compute()
-
-    extracted_files = (Path(datadir) / "acq").glob("*.txt*")
-    db.from_sequence(extracted_files).map(convert_acq).compute()
-
-
-def convert_csv(f, with_float64=False):
+def convert_performance_to_parquet(f, with_id_as_float64):
     columns = {
-        "loan_id": [pyarrow.float64() if with_float64 else pyarrow.int64()][0],
+        "loan_id": pyarrow.float64() if with_id_as_float64 else pyarrow.int64(),
         "monthly_reporting_period": pyarrow.string(),
         "servicer": pyarrow.string(),
         "interest_rate": pyarrow.float64(),
@@ -86,9 +67,9 @@ def convert_csv(f, with_float64=False):
     pq.write_table(data, outfile)
 
 
-def convert_acq(f):
+def convert_acquisition_to_parquet(f, with_id_as_float64):
     columns = {
-        "loan_id": pyarrow.int64(),
+        "loan_id": pyarrow.float64() if with_id_as_float64 else pyarrow.int64(),
         "orig_channel": pyarrow.string(),
         "seller_name": pyarrow.string(),
         "orig_interest_rate": pyarrow.float64(),
@@ -128,6 +109,50 @@ def convert_acq(f):
     outfile = f.parent / (f.name + ".parquet")
     pq.write_table(data, outfile)
 
+
+def bar_custom(current, total, width=80):
+    sys.stdout.write("\r%d%% [%d / %d] bytes" % (current / total * 100, current, total)
+    )
+    sys.stdout.flush()
+
+
+@click.command()
+@click.option("--with-id-as-float64/--without-id-as-float64", default=False)
+@click.option("--years", default=1)
+@click.option("--datadir", default="data")
+def main(years, datadir, with_id_as_float64):
+    link = LINKS[years]
+    click.echo("Downloading\u2026")
+    wget.download(link, datadir, bar=bar_custom)
+    click.echo("\nExtracting\u2026")
+    tar = tarfile.open(Path(datadir) / link.split("/")[-1])
+    tar.extractall(datadir)
+    tar.close()
+    click.echo("Converting\u2026")
+    extracted_files = (Path(datadir) / "perf").glob("*.txt*")
+    result = (
+        db.from_sequence(extracted_files)
+        .map(
+            convert_performance_to_parquet,
+            with_id_as_float64,
+        )
+        .compute()
+    )
+    click.echo(f"Writen {len(result)} performance parquet files")
+
+    extracted_files = (Path(datadir) / "acq").glob("*.txt*")
+    result = (
+        db.from_sequence(extracted_files)
+        .map(
+            convert_acquisition_to_parquet,
+            with_id_as_float64,
+        )
+        .compute()
+    )
+    click.echo(f"Writen {len(result)} acquisitions parquet files")
+    click.echo("\n")
+    click.echo(pq.read_schema(next((Path(datadir)/ "acq").glob("*.parquet"))))
+    click.echo(pq.read_schema(next((Path(datadir)/ "perf").glob("*.parquet"))))
 
 if __name__ == "__main__":
     main()

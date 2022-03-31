@@ -142,27 +142,27 @@ def main(mode, datadir, threads):
 
     start_time = time.time()
     mem = memory_usage(
+        (
+            execute,
             (
-                execute,
-                (
-                    sql,
-                    threads,
-                ),
-            )
+                sql,
+                threads,
+            ),
         )
+    )
     total_time = time.time() - start_time
 
     data = {
-            **platform_info(),
-            "threads": threads,
-            "run_date": datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-            "total_time": total_time,
-            "row_count_perf": row_count_perf,
-            "row_count_acq": row_count_acq,
-            "max_memory_usage": max(mem),
-            "incremental_memory_usage": mem[-1] - mem[0],
-            "sql": " ".join(str(sql).split()),
-        }
+        **platform_info(),
+        "threads": threads,
+        "run_date": datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+        "total_time": total_time,
+        "row_count_perf": row_count_perf,
+        "row_count_acq": row_count_acq,
+        "max_memory_usage": max(mem),
+        "incremental_memory_usage": mem[-1] - mem[0],
+        "sql": " ".join(str(sql).split()),
+    }
     print(json.dumps(data))
 
 
