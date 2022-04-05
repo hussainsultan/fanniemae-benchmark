@@ -4,3 +4,4 @@ data/*
 *.tgz
 .DS_Store
 mortgage.db
+mortgage.db.*
