@@ -15,17 +15,20 @@ from memory_profiler import memory_usage
 warnings.filterwarnings("ignore")
 
 
-def create_db(datadir):
-    conn = duckdb.connect("mortgage.db")
+def create_duckdb(datadir, threads=psutil.cpu_count(), profile="profile.txt"):
+    db = ibis.duckdb.connect("mortgage.db")
     perf_path = datadir / "perf/*.parquet"
     acq_path = datadir / "acq/*.parquet"
-    conn.execute(f"CREATE OR REPLACE VIEW perf AS SELECT * FROM '{perf_path}'")
-    conn.execute(f"CREATE OR REPLACE VIEW acq AS SELECT * FROM '{acq_path}'")
-    conn.close()
+    db.con.execute(f"CREATE OR REPLACE VIEW perf AS SELECT * FROM '{perf_path}'")
+    db.con.execute(f"CREATE OR REPLACE VIEW acq AS SELECT * FROM '{acq_path}'")
+    db.con.execute(f"PRAGMA threads={threads}")
+    if profile:
+        db.con.execute("PRAGMA enable_profiling")
+        db.con.execute(f"PRAGMA profiling_output='{profile}'")
+    return db
 
 
-def summary_expr(datadir):
-    db = ibis.duckdb.connect("mortgage.db")
+def summary_query(db):
     perf = db.table("perf")
     acq = db.table("acq")
     acq = acq[
@@ -86,30 +89,11 @@ def summary_expr(datadir):
             summary.dollar_co,
         ]
     )
-    del db
     return summary
 
 
-def summary_sql(datadir):
-    with open("summary.sql") as f:
-        template = Template(f.read())
-    return template.render(
-        perf=str(datadir / "perf/*.parquet"), acq=str(datadir / "acq/*.parquet")
-    )
-
-
-def window_sql(datadir):
-    perf_path = datadir / "perf/*.parquet"
-    acq_path = datadir / "acq/*.parquet"
-    sql = f"select count(*) from (select RANK() OVER (PARTITION BY loan_id ORDER BY monthly_reporting_period) as number from '{perf_path}')"
-    return sql
-
-
-def execute(expr, threads=8):
-    conn = duckdb.connect("mortgage.db")
-    conn.execute(f"PRAGMA threads={threads}")
-    result = conn.execute(str(expr)).fetchall()
-    conn.close()
+def execute(expr, db):
+    result = db.execute(expr)
     return result
 
 
@@ -125,43 +109,51 @@ def platform_info():
     }
 
 
+def collect_stats(db):
+    return {
+        "total_rows_RHS": db.con.execute("select count(*) from perf").fetchall()[0][0],
+        "row_count_LHS": db.con.execute("select count(*) from acq").fetchall()[0][0],
+    }
+
+
+QUERIES = {"summary": summary_query}
+
+
 @click.command()
 @click.option("--threads", default=psutil.cpu_count())
 @click.option("--datadir", default="data")
-@click.option("--mode", default="sql")
-def main(mode, datadir, threads):
+def main(datadir, threads):
     datadir = Path(datadir)
-    create_db(datadir)
-    if mode == "ibis":
-        summary = summary_expr(datadir)
-        sql = summary.compile().compile(compile_kwargs={"literal_binds": True})
-    else:
-        sql = summary_sql(datadir)
-    row_count_perf = execute("select count(*) from perf")[0][0]
-    row_count_acq = execute("select count(*) from acq")[0][0]
-
-    start_time = time.time()
-    mem = memory_usage(
-        (
-            execute,
+    db = create_duckdb(datadir, threads=threads, profile="profile.txt")
+    stats = []
+    for query in QUERIES:
+        expression = QUERIES[query](db)
+        start_time = time.time()
+        mem = memory_usage(
             (
-                sql,
-                threads,
-            ),
+                execute,
+                (
+                    expression,
+                    db,
+                ),
+            )
         )
-    )
-    total_time = time.time() - start_time
-
+        total_time = time.time() - start_time
+        run_stats = {
+            "name": query,
+            "threads": threads,
+            "run_date": datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+            "total_time": total_time,
+            "max_memory_usage": max(mem),
+            "incremental_memory_usage": mem[-1] - mem[0],
+        }
+        stats.append(run_stats)
     data = {
         **platform_info(),
+        "runs": stats,
         "threads": threads,
-        "run_date": datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-        "total_time": total_time,
-        "row_count_perf": row_count_perf,
-        "row_count_acq": row_count_acq,
-        "max_memory_usage": max(mem),
-        "incremental_memory_usage": mem[-1] - mem[0],
-        "sql": " ".join(str(sql).split()),
+        "schema_info": collect_stats(db),
+        "datadir": str(datadir),
     }
     print(json.dumps(data))
 
