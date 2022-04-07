@@ -1,5 +1,7 @@
 data/*
 16_year_data/*
 *.pyc
+*.tgz
 .DS_Store
 mortgage.db
+mortgage.db.*
