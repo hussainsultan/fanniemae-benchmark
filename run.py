@@ -1,16 +1,19 @@
 import datetime
 import json
 import platform
-import time
+import timeit
 import warnings
 from pathlib import Path
 
 import click
 import duckdb
 import ibis
+import pandas as pd
 import psutil
 from jinja2 import Template
 from memory_profiler import memory_usage
+
+from powermetrics import PowerMetricsProfiler
 
 warnings.filterwarnings("ignore")
 
@@ -116,7 +119,38 @@ def collect_stats(db):
     }
 
 
+def power_result(power_results):
+    return {
+        "idle_ratio_cpus": list(
+            pd.json_normalize(power_results, ["processor", "clusters", "cpus"])
+            .groupby("cpu")
+            .idle_ratio.mean()
+        ),
+        "power_cluster": list(
+            pd.json_normalize(power_results, ["processor", "clusters"])
+            .groupby("name")
+            .mean()
+            .power.values
+        ),
+    }
+
+
 QUERIES = {"summary": summary_query}
+
+
+def profile_run(expression, db):
+    start_time = timeit.default_timer()
+    mem = memory_usage(
+        (
+            execute,
+            (
+                expression,
+                db,
+            ),
+        )
+    )
+    total_time = timeit.default_timer() - start_time
+    return mem, total_time
 
 
 @click.command()
@@ -128,17 +162,8 @@ def main(datadir, threads):
     stats = []
     for query in QUERIES:
         expression = QUERIES[query](db)
-        start_time = time.time()
-        mem = memory_usage(
-            (
-                execute,
-                (
-                    expression,
-                    db,
-                ),
-            )
-        )
-        total_time = time.time() - start_time
+        with PowerMetricsProfiler() as power:
+            mem, total_time = profile_run(expression, db)
         run_stats = {
             "name": query,
             "threads": threads,
@@ -146,6 +171,7 @@ def main(datadir, threads):
             "total_time": total_time,
             "max_memory_usage": max(mem),
             "incremental_memory_usage": mem[-1] - mem[0],
+            **power_result(power.results),
         }
         stats.append(run_stats)
     data = {

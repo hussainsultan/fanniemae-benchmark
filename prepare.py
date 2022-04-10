@@ -1,7 +1,7 @@
 import glob
+import sys
 import tarfile
 from pathlib import Path
-import sys
 
 import click
 import dask.bag as db
@@ -111,8 +111,7 @@ def convert_acquisition_to_parquet(f, with_id_as_float64):
 
 
 def bar_custom(current, total, width=80):
-    sys.stdout.write("\r%d%% [%d / %d] bytes" % (current / total * 100, current, total)
-    )
+    sys.stdout.write("\r%d%% [%d / %d] bytes" % (current / total * 100, current, total))
     sys.stdout.flush()
 
 
@@ -151,8 +150,9 @@ def main(years, datadir, with_id_as_float64):
     )
     click.echo(f"Writen {len(result)} acquisitions parquet files")
     click.echo("\n")
-    click.echo(pq.read_schema(next((Path(datadir)/ "acq").glob("*.parquet"))))
-    click.echo(pq.read_schema(next((Path(datadir)/ "perf").glob("*.parquet"))))
+    click.echo(pq.read_schema(next((Path(datadir) / "acq").glob("*.parquet"))))
+    click.echo(pq.read_schema(next((Path(datadir) / "perf").glob("*.parquet"))))
+
 
 if __name__ == "__main__":
     main()

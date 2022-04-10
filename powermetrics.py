@@ -2,18 +2,15 @@ import plistlib
 import subprocess
 import sys
 import time
+from contextlib import contextmanager
 from multiprocessing import Pipe, Process
 
-import pandas as pd
 
-
-
-
-class PowerMetrics(Process):
+class PowerMetricsProcess(Process):
     def __init__(self, pipe, *args, **kw):
         self.pipe = pipe
 
-        super(PowerMetrics, self).__init__(*args, **kw)
+        super(PowerMetricsProcess, self).__init__(*args, **kw)
 
     def run(self):
         self.pipe.send(0)
@@ -36,38 +33,29 @@ class PowerMetrics(Process):
             buffer.append(plistlib.loads(process.stdout.read()))
             if stop:
                 break
-            stop = self.pipe.poll(0.05)
+            stop = self.pipe.poll(0.1)
         self.pipe.send(buffer)
 
 
-def powermetrics(proc):
-    if callable(proc):
-        proc = (proc, (), {})
-    if isinstance(proc, (list, tuple)):
-        if len(proc) == 1:
-            f, args, kw = (proc[0], (), {})
-        elif len(proc) == 2:
-            f, args, kw = (proc[0], proc[1], {})
-        elif len(proc) == 3:
-            f, args, kw = (proc[0], proc[1], proc[2])
-        else:
-            raise ValueError
-    child_conn, parent_conn = Pipe()
-    p = PowerMetrics(child_conn)
-    p.start()
-    
-    parent_conn.recv()
-    proc_output = f(*args, **kw)
-    parent_conn.send(0)
+class PowerMetricsProfiler:
+    def __init__(self):
+        self.results = []
 
-    outputs = parent_conn.recv()
-    result = pd.json_normalize(outputs, ["processor", "clusters"], "timestamp")
-    return proc_output, result
+    def __enter__(self):
+        self.child_conn, self.parent_conn = Pipe()
+        self.p = PowerMetricsProcess(self.child_conn)
+        self.p.start()
+        self.parent_conn.recv()
+        return self
+
+    def __exit__(self, exc_type, exc_value, exc_traceback):
+        self.parent_conn.send(0)
+        self.results = self.parent_conn.recv()
+        return False
 
 
 if __name__ == "__main__":
-    def test():
+    with PowerMetricsProfiler() as p:
         time.sleep(20)
-        return None
-    result = powermetrics(test)
-    print(result)
+
+    print(p.results)
