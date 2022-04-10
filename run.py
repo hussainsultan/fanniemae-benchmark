@@ -97,11 +97,6 @@ def summary_query(db):
     return summary
 
 
-def execute(expr, db):
-    result = db.execute(expr)
-    return result
-
-
 def platform_info():
     return {
         "machine": platform.machine(),
@@ -134,22 +129,26 @@ def collect_stats(db):
 
 
 def aggregate_power_stats(power_results):
+    cpus = pd.json_normalize(power_results, ["processor", "clusters", "cpus"])
+    clusters = pd.json_normalize(power_results, ["processor", "clusters"])
+    total = pd.json_normalize(power_results)
     return {
-        "idle_ratio_cpus": list(
-            pd.json_normalize(power_results, ["processor", "clusters", "cpus"])
-            .groupby("cpu")
-            .idle_ratio.mean()
-        ),
-        "power_cluster": list(
-            pd.json_normalize(power_results, ["processor", "clusters"])
-            .groupby("name")
-            .mean()
-            .power.values
-        ),
+        "idle_ratio_cpus": list(cpus.groupby("cpu").idle_ratio.mean()),
+        "freq_hz": list(cpus.groupby("cpu").freq_hz.mean()),
+        "power_cluster": list(clusters.groupby("name").mean().power.values),
+        "package_energy_sum": int(total["processor.package_energy"].sum()),
+        "cpu_energy_sum": int(total["processor.cpu_energy"].sum()),
+        "dram_energy_sum": int(total["processor.dram_energy"].sum()),
+        "elapsed_ns": int(total["elapsed_ns"].sum()),
     }
 
 
 QUERIES = {"summary": summary_query}
+
+
+def execute(expr, db):
+    result = db.execute(expr)
+    return result
 
 
 def profile_run(expression, db):
