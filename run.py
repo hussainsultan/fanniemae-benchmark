@@ -16,6 +16,7 @@ from jinja2 import Template
 from memory_profiler import memory_usage
 
 from powermetrics import PowerMetricsProfiler
+
 warnings.filterwarnings("ignore")
 
 
@@ -187,8 +188,18 @@ def run_query(query, db, powermetrics):
 
 
 @click.command()
-@click.option("--powermetrics/--no-powermetrics", default=False, show_default=True, help = "Flag to get cpu and power metrics on OSX")
-@click.option("--threads", default=str(psutil.cpu_count()), show_default=True, help="comma seperated list of threads to run e.g. 2,4,8")
+@click.option(
+    "--powermetrics/--no-powermetrics",
+    default=False,
+    show_default=True,
+    help="Flag to get cpu and power metrics on OSX",
+)
+@click.option(
+    "--threads",
+    default=str(psutil.cpu_count()),
+    show_default=True,
+    help="comma seperated list of threads to run e.g. 2,4,8",
+)
 @click.option("--datadir", default="data", show_default=True)
 def main(datadir, threads, powermetrics):
     threads = [int(s) for s in threads.split(",")]
