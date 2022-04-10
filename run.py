@@ -1,9 +1,11 @@
 import datetime
 import json
+import os
 import platform
 import timeit
 import warnings
 from pathlib import Path
+from shutil import which
 
 import click
 import duckdb
@@ -14,7 +16,6 @@ from jinja2 import Template
 from memory_profiler import memory_usage
 
 from powermetrics import PowerMetricsProfiler
-
 warnings.filterwarnings("ignore")
 
 
@@ -112,6 +113,18 @@ def platform_info():
     }
 
 
+def is_powermetrics_available():
+    if (
+        (platform.system() == "Darwin")
+        and (platform.machine() == "arm64")
+        and (os.geteuid() == 0)
+        and (which("powermetrics") is not None)
+    ):
+        return True
+    else:
+        return False
+
+
 def collect_stats(db):
     return {
         "total_rows_RHS": db.con.execute("select count(*) from perf").fetchall()[0][0],
@@ -119,7 +132,7 @@ def collect_stats(db):
     }
 
 
-def power_result(power_results):
+def aggregate_power_stats(power_results):
     return {
         "idle_ratio_cpus": list(
             pd.json_normalize(power_results, ["processor", "clusters", "cpus"])
@@ -153,35 +166,45 @@ def profile_run(expression, db):
     return mem, total_time
 
 
-@click.command()
-@click.option("--threads", default=psutil.cpu_count())
-@click.option("--datadir", default="data")
-def main(datadir, threads):
-    datadir = Path(datadir)
-    db = create_duckdb(datadir, threads=threads, profile="profile.txt")
-    stats = []
-    for query in QUERIES:
-        expression = QUERIES[query](db)
+def run_query(query, db, powermetrics):
+    expression = QUERIES[query](db)
+    if powermetrics and is_powermetrics_available():
         with PowerMetricsProfiler() as power:
             mem, total_time = profile_run(expression, db)
-        run_stats = {
-            "name": query,
-            "threads": threads,
-            "run_date": datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-            "total_time": total_time,
-            "max_memory_usage": max(mem),
-            "incremental_memory_usage": mem[-1] - mem[0],
-            **power_result(power.results),
-        }
-        stats.append(run_stats)
-    data = {
-        **platform_info(),
-        "runs": stats,
-        "threads": threads,
-        "schema_info": collect_stats(db),
-        "datadir": str(datadir),
+        power_cpu = aggregate_power_stats(power.results)
+    else:
+        mem, total_time = profile_run(expression, db)
+        power_cpu = {}
+    run_stats = {
+        "name": query,
+        "run_date": datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+        "total_time": total_time,
+        "max_memory_usage": max(mem),
+        "incremental_memory_usage": mem[-1] - mem[0],
     }
-    print(json.dumps(data))
+    run_stats.update(power_cpu)
+    return run_stats
+
+
+@click.command()
+@click.option("--powermetrics/--no-powermetrics", default=False, show_default=True, help = "Flag to get cpu and power metrics on OSX")
+@click.option("--threads", default=str(psutil.cpu_count()), show_default=True, help="comma seperated list of threads to run e.g. 2,4,8")
+@click.option("--datadir", default="data", show_default=True)
+def main(datadir, threads, powermetrics):
+    threads = [int(s) for s in threads.split(",")]
+    for t in threads:
+        datadir = Path(datadir)
+        db = create_duckdb(datadir, threads=t, profile="profile.txt")
+        stats = [run_query(query, db, powermetrics) for query in QUERIES]
+
+        data = {
+            **platform_info(),
+            "runs": stats,
+            "threads": t,
+            "schema_info": collect_stats(db),
+            "datadir": str(datadir),
+        }
+        click.echo(json.dumps(data))
 
 
 if __name__ == "__main__":
