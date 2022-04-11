@@ -11,12 +11,12 @@ import pyarrow.parquet as pq
 import wget
 
 LINKS = {
-    1: "http://rapidsai-data.s3-website.us-east-2.amazonaws.com/notebook-mortgage-data/mortgage_2000.tgz",
-    2: "http://rapidsai-data.s3-website.us-east-2.amazonaws.com/notebook-mortgage-data/mortgage_2000-2001.tgz",
-    4: "http://rapidsai-data.s3-website.us-east-2.amazonaws.com/notebook-mortgage-data/mortgage_2000-2003.tgz",
-    8: "http://rapidsai-data.s3-website.us-east-2.amazonaws.com/notebook-mortgage-data/mortgage_2000-2007.tgz",
-    16: "http://rapidsai-data.s3-website.us-east-2.amazonaws.com/notebook-mortgage-data/mortgage_2000-2015.tgz",
-    17: "http://rapidsai-data.s3-website.us-east-2.amazonaws.com/notebook-mortgage-data/mortgage_2000-2016.tgz",
+    "1": "http://rapidsai-data.s3-website.us-east-2.amazonaws.com/notebook-mortgage-data/mortgage_2000.tgz",
+    "2": "http://rapidsai-data.s3-website.us-east-2.amazonaws.com/notebook-mortgage-data/mortgage_2000-2001.tgz",
+    "4": "http://rapidsai-data.s3-website.us-east-2.amazonaws.com/notebook-mortgage-data/mortgage_2000-2003.tgz",
+    "8": "http://rapidsai-data.s3-website.us-east-2.amazonaws.com/notebook-mortgage-data/mortgage_2000-2007.tgz",
+    "16": "http://rapidsai-data.s3-website.us-east-2.amazonaws.com/notebook-mortgage-data/mortgage_2000-2015.tgz",
+    "17": "http://rapidsai-data.s3-website.us-east-2.amazonaws.com/notebook-mortgage-data/mortgage_2000-2016.tgz",
 }
 
 
@@ -116,9 +116,17 @@ def bar_custom(current, total, width=80):
 
 
 @click.command()
-@click.option("--with-id-as-float64/--without-id-as-float64", default=False)
-@click.option("--years", default=1)
-@click.option("--datadir", default="data")
+@click.option(
+    "--with-id-as-float64/--without-id-as-float64", default=False, show_default=True
+)
+@click.option(
+    "--years",
+    type=click.Choice(LINKS.keys()),
+    default=1,
+    show_default=True,
+    help="Number of years of fannie mae data to download",
+)
+@click.option("--datadir", type=str, help="directory to download the data")
 def main(years, datadir, with_id_as_float64):
     link = LINKS[years]
     click.echo("Downloading\u2026")

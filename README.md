@@ -5,11 +5,29 @@ Dataset is derived from Fannie Mae’s Single-Family Loan Performance Data with 
 The following script will download the data and parse it into parquet files
 
 ```
-mkdir data && python prepare.py --years=1 --datadir=data
+❯ python prepare.py --help
+Usage: prepare.py [OPTIONS]
+
+Options:
+  --with-id-as-float64 / --without-id-as-float64
+                                  [default: without-id-as-float64]
+  --years [1|2|4|8|16|17]         Number of years of fannie mae data to
+                                  download  [default: 1]
+  --datadir TEXT                  directory to download the data
+  --help                          Show this message and exit.
 ```
-### Run Summary Benchmark
+### Run
 
 ```
-python run.py --mode=sql --datadir=data --threads=8
+❯ python run.py --help
+Usage: run.py [OPTIONS]
+Options:
+  --powermetrics / --no-powermetrics
+                                  Flag to get cpu and power metrics on OSX
+                                  [default: no-powermetrics]
+  --threads TEXT                  comma seperated list of threads to run e.g.
+                                  2,4,8  [default: 8]
+  --datadir TEXT                  [default: data]
+  --help                          Show this message and exit.
 ```
 
