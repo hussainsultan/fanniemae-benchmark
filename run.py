@@ -202,7 +202,8 @@ def run_query(query, db, powermetrics):
 @click.option("--datadir", default="data", show_default=True)
 def main(datadir, threads, powermetrics):
     threads = [int(s) for s in threads.split(",")]
-    for t in threads:
+    click.echo("[")
+    for i, t in enumerate(threads):
         datadir = Path(datadir)
         db = create_duckdb(datadir, threads=t, profile="profile.txt")
         stats = [run_query(query, db, powermetrics) for query in QUERIES]
@@ -215,6 +216,11 @@ def main(datadir, threads, powermetrics):
             "datadir": str(datadir),
         }
         click.echo(json.dumps(data))
+        total_threads = len(threads)
+        if total_threads > 1 and i < total_threads - 1:
+            click.echo(",")
+
+    click.echo("]")
 
 
 if __name__ == "__main__":
