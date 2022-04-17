@@ -2,6 +2,7 @@ import datetime
 import json
 import os
 import platform
+import time
 import timeit
 import warnings
 from pathlib import Path
@@ -15,6 +16,7 @@ import psutil
 from jinja2 import Template
 from memory_profiler import memory_usage
 
+from powercap_rapl import PowercapRaplProfiler
 from powermetrics import PowerMetricsProfiler
 
 warnings.filterwarnings("ignore")
@@ -121,6 +123,18 @@ def is_powermetrics_available():
         return False
 
 
+def is_powercap_available():
+    if (
+        (platform.processor() == "x86_64")
+        and platform.system() == "Linux"
+        and os.geteuid() == 0
+        and os.path.exists("/sys/devices/virtual/powercap/intel-rapl/intel-rapl:0")
+    ):
+        return True
+    else:
+        return False
+
+
 def collect_stats(db):
     return {
         "total_rows_RHS": db.con.execute("select count(*) from perf").fetchall()[0][0],
@@ -152,33 +166,33 @@ def execute(expr, db):
 
 
 def profile_run(expression, db):
-    start_time = timeit.default_timer()
-    mem = memory_usage(
-        (
-            execute,
-            (
-                expression,
-                db,
-            ),
-        )
-    )
-    total_time = timeit.default_timer() - start_time
-    return mem, total_time
+    start_time_process = timeit.default_timer()
+    start_time_cpu = time.process_time()
+    mem = memory_usage((execute, (expression, db,),))
+    total_time_cpu = time.process_time() - start_time_cpu
+    total_time_process = timeit.default_timer() - start_time_process
+    return mem, total_time_process, total_time_cpu
 
 
 def run_query(query, db, powermetrics):
     expression = QUERIES[query](db)
     if powermetrics and is_powermetrics_available():
         with PowerMetricsProfiler() as power:
-            mem, total_time = profile_run(expression, db)
+            mem, total_time_process, total_time_cpu = profile_run(expression, db)
         power_cpu = aggregate_power_stats(power.results)
+    elif powermetrics and is_powercap_available():
+        with PowercapRaplProfiler() as power:
+            mem, total_time_process, total_time_cpu = profile_run(expression, db)
+        power_cpu = {"mW ": power.results / power.total_time / 10 ** 3}
     else:
-        mem, total_time = profile_run(expression, db)
+        mem, total_time_process, total_time_cpu = profile_run(expression, db)
         power_cpu = {}
+
     run_stats = {
         "name": query,
         "run_date": datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-        "total_time": total_time,
+        "total_time_process": total_time_process,
+        "total_time_cpu": total_time_cpu,
         "max_memory_usage": max(mem),
         "incremental_memory_usage": mem[-1] - mem[0],
     }
