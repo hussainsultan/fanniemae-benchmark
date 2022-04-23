@@ -147,13 +147,13 @@ def aggregate_power_stats(power_results):
     clusters = pd.json_normalize(power_results, ["processor", "clusters"])
     total = pd.json_normalize(power_results)
     return {
-        "idle_ratio_cpus": list(cpus.groupby("cpu").idle_ratio.mean()),
-        "freq_hz": list(cpus.groupby("cpu").freq_hz.mean()),
-        "power_cluster": list(clusters.groupby("name").mean().power.values),
-        "package_energy_sum": int(total["processor.package_energy"].sum()),
-        "cpu_energy_sum": int(total["processor.cpu_energy"].sum()),
-        "dram_energy_sum": int(total["processor.dram_energy"].sum()),
-        "elapsed_ns": int(total["elapsed_ns"].sum()),
+        #"idle_ratio_cpus": list(cpus.groupby("cpu").idle_ratio.mean()),
+        #"freq_hz": list(cpus.groupby("cpu").freq_hz.mean()),
+        "power_mW": sum(list(clusters.groupby("name").mean().power.values)),
+        #"package_energy_sum": int(total["processor.package_energy"].sum()),
+        "cpu_mJ": int(total["processor.cpu_energy"].sum()),
+        #"dram_energy_sum": int(total["processor.dram_energy"].sum()),
+        #"elapsed_ns": int(total["elapsed_ns"].sum()),
     }
 
 
@@ -183,7 +183,7 @@ def run_query(query, db, powermetrics):
     elif powermetrics and is_powercap_available():
         with PowercapRaplProfiler() as power:
             mem, total_time_process, total_time_cpu = profile_run(expression, db)
-        power_cpu = {"mW ": power.results / power.total_time / 10 ** 3}
+        power_cpu = {"cpu_mJ": power.results/10 ** 3, "power_mW": power.results/power.total_time/10**3}
     else:
         mem, total_time_process, total_time_cpu = profile_run(expression, db)
         power_cpu = {}
