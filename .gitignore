@@ -6,3 +6,6 @@ data/*
 mortgage.db
 mortgage.db.*
 .ipynb_checkpoints*
+mylocal_db
+mylocal_db/*
+logfile
