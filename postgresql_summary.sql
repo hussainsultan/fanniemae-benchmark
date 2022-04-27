@@ -7,7 +7,6 @@ WITH performance AS (
         perf.disposition_date,
         perf.current_actual_upb,
         SUBSTRING(orig_date, POSITION('/' in orig_date)) AS report_month,
-        CAST (perf.current_loan_delinquency_status AS INTEGER),
         CASE
             WHEN perf.current_loan_delinquency_status > 1 THEN 1
             ELSE 0
@@ -50,9 +49,7 @@ FROM
     (SELECT
         orig_date,
         stmt_number,
-        borrower_credit_score,
         AVG(borrower_credit_score) AS avg_credit_score,
-
         SUM(CASE
             WHEN disposition_date IS NOT NULL THEN current_actual_upb
             ELSE 0
