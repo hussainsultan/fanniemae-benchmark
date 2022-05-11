@@ -4,4 +4,4 @@ conda create --name benchmarking
 
 conda activate benchmarking
 
-while read requirement; do mamba install --yes $requirement; done < requirements.txt
+while read requirement; do mamba install $requirement --yes -c conda-forge; done < requirements.txt
