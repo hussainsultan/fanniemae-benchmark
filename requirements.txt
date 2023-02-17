@@ -1,9 +1,0 @@
-duckdb-engine
-duckdb
-memory_profiler
-click
-git+https://github.com/ibis-project/ibis.git@master
-jinja2
-dask[bag]
-wget
-pandas

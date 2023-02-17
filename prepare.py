@@ -130,6 +130,7 @@ def bar_custom(current, total, width=80):
 def main(years, datadir, with_id_as_float64):
     link = LINKS[years]
     click.echo("Downloading\u2026")
+    Path(datadir).mkdir(parents=True, exist_ok=True)
     wget.download(link, datadir, bar=bar_custom)
     click.echo("\nExtracting\u2026")
     tar = tarfile.open(Path(datadir) / link.split("/")[-1])
@@ -158,8 +159,6 @@ def main(years, datadir, with_id_as_float64):
     )
     click.echo(f"Writen {len(result)} acquisitions parquet files")
     click.echo("\n")
-    click.echo(pq.read_schema(next((Path(datadir) / "acq").glob("*.parquet"))))
-    click.echo(pq.read_schema(next((Path(datadir) / "perf").glob("*.parquet"))))
 
 
 if __name__ == "__main__":

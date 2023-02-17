@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fanniemae-benchmark"
+description = "Benchmarks for Fannie Mae Data"
+readme = "README.rst"
+requires-python = ">= 3.8"
+dynamic = ["version"]
+dependencies = [
+    "ibis-framework",
+    "click",
+    "dask[bag]",
+    "duckdb",
+    "duckdb-engine",
+    "pyarrow",
+    "wget",
+    "memory_profiler",
+    "pandas",
+    "jinja2",
+    "polars"
+]

@@ -1,4 +1,5 @@
 import datetime
+import itertools
 import json
 import os
 import platform
@@ -16,31 +17,27 @@ import psutil
 from jinja2 import Template
 from memory_profiler import memory_usage
 
-from powercap_rapl import PowercapRaplProfiler
-from powermetrics import PowerMetricsProfiler
+from benchmark.powercap_rapl import PowercapRaplProfiler
+from benchmark.powermetrics import PowerMetricsProfiler
 
 warnings.filterwarnings("ignore")
 
+BACKEND = {"polars": ibis.polars.connect(), "duckdb": ibis.duckdb.connect()}
 
-def create_duckdb(datadir, threads=psutil.cpu_count(), profile="profile.txt"):
-    db = ibis.duckdb.connect("mortgage.db")
+
+def create_duckdb(datadir, engine="duckdb"):
+    db = BACKEND.get(engine)
     perf_path = datadir / "perf/*.parquet"
     acq_path = datadir / "acq/*.parquet"
-    db.con.execute(f"CREATE OR REPLACE VIEW perf AS SELECT * FROM '{perf_path}'")
-    db.con.execute(f"CREATE OR REPLACE VIEW acq AS SELECT * FROM '{acq_path}'")
-    db.con.execute(f"PRAGMA threads={threads}")
-    if profile:
-        db.con.execute("PRAGMA enable_profiling")
-        db.con.execute(f"PRAGMA profiling_output='{profile}'")
+    db.register(f"{perf_path}", "perf")
+    db.register(f"{acq_path}", "acq")
     return db
 
 
 def summary_query(db):
     perf = db.table("perf")
     acq = db.table("acq")
-    acq = acq[
-        acq.loan_id, acq.orig_date.split("/")[1].name("year"), acq.borrower_credit_score
-    ]
+    acq = acq[acq.loan_id, acq.orig_date.name("year"), acq.borrower_credit_score]
     joined = acq.inner_join(perf, acq.loan_id == perf.loan_id)
 
     chargeoffs = (
@@ -82,13 +79,12 @@ def summary_query(db):
             upb_sum=lambda x: x.current_actual_upb.sum(),
         )
     )
-
     acq_agg = acq.groupby([acq.year]).loan_id.count()
 
     summary = summary.inner_join(acq_agg, acq_agg.year == summary.year)
     summary = summary.projection(
         [
-            summary.year_x,
+            summary.year,
             summary.loan_age,
             summary["count(loan_id)"],
             summary.avg_credit_score,
@@ -147,13 +143,13 @@ def aggregate_power_stats(power_results):
     clusters = pd.json_normalize(power_results, ["processor", "clusters"])
     total = pd.json_normalize(power_results)
     return {
-        #"idle_ratio_cpus": list(cpus.groupby("cpu").idle_ratio.mean()),
-        #"freq_hz": list(cpus.groupby("cpu").freq_hz.mean()),
+        # "idle_ratio_cpus": list(cpus.groupby("cpu").idle_ratio.mean()),
+        # "freq_hz": list(cpus.groupby("cpu").freq_hz.mean()),
         "power_mW": sum(list(clusters.groupby("name").mean().power.values)),
-        #"package_energy_sum": int(total["processor.package_energy"].sum()),
+        # "package_energy_sum": int(total["processor.package_energy"].sum()),
         "cpu_mJ": int(total["processor.cpu_energy"].sum()),
-        #"dram_energy_sum": int(total["processor.dram_energy"].sum()),
-        #"elapsed_ns": int(total["elapsed_ns"].sum()),
+        # "dram_energy_sum": int(total["processor.dram_energy"].sum()),
+        # "elapsed_ns": int(total["elapsed_ns"].sum()),
     }
 
 
@@ -168,7 +164,15 @@ def execute(expr, db):
 def profile_run(expression, db):
     start_time_process = timeit.default_timer()
     start_time_cpu = time.process_time()
-    mem = memory_usage((execute, (expression, db,),))
+    mem = memory_usage(
+        (
+            execute,
+            (
+                expression,
+                db,
+            ),
+        )
+    )
     total_time_cpu = time.process_time() - start_time_cpu
     total_time_process = timeit.default_timer() - start_time_process
     return mem, total_time_process, total_time_cpu
@@ -183,7 +187,10 @@ def run_query(query, db, powermetrics):
     elif powermetrics and is_powercap_available():
         with PowercapRaplProfiler() as power:
             mem, total_time_process, total_time_cpu = profile_run(expression, db)
-        power_cpu = {"cpu_mJ": power.results/10 ** 3, "power_mW": power.results/power.total_time/10**3}
+        power_cpu = {
+            "cpu_mJ": power.results / 10**3,
+            "power_mW": power.results / power.total_time / 10**3,
+        }
     else:
         mem, total_time_process, total_time_cpu = profile_run(expression, db)
         power_cpu = {}
@@ -202,39 +209,38 @@ def run_query(query, db, powermetrics):
 
 @click.command()
 @click.option(
+    "--engines",
+    default="duckdb",
+    show_default=True,
+    help="comma seperated list of datadirs to run e.g. duckdb, polars",
+)
+@click.option(
     "--powermetrics/--no-powermetrics",
     default=False,
     show_default=True,
     help="Flag to get cpu and power metrics on OSX",
 )
 @click.option(
-    "--threads",
-    default=str(psutil.cpu_count()),
+    "--datadir",
+    default="data",
     show_default=True,
-    help="comma seperated list of threads to run e.g. 2,4,8",
+    help="comma seperated list of datadirs to run e.g. 2,4,8",
 )
-@click.option("--datadir", default="data", show_default=True)
-def main(datadir, threads, powermetrics):
-    threads = [int(s) for s in threads.split(",")]
-    click.echo("[")
-    for i, t in enumerate(threads):
+def main(datadir, powermetrics, engines):
+    datadirs = [s for s in datadir.split(",")]
+    engines = [s for s in engines.split(",")]
+    runs = []
+    for datadir, engine in itertools.product(datadirs, engines):
         datadir = Path(datadir)
-        db = create_duckdb(datadir, threads=t, profile="profile.txt")
+        db = create_duckdb(datadir, engine=engine)
         stats = [run_query(query, db, powermetrics) for query in QUERIES]
 
-        data = {
-            **platform_info(),
-            "runs": stats,
-            "threads": t,
-            "schema_info": collect_stats(db),
-            "datadir": str(datadir),
-        }
-        click.echo(json.dumps(data))
-        total_threads = len(threads)
-        if total_threads > 1 and i < total_threads - 1:
-            click.echo(",")
+        data = {**platform_info(), "runs": stats, "datadir": datadir, "db": engine}
+        runs.append(data)
 
-    click.echo("]")
+    df = pd.json_normalize(runs, ["runs"], meta=["datadir", "db"])
+    click.echo()
+    click.echo(df)
 
 
 if __name__ == "__main__":
