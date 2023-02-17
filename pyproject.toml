@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "fanniemae-benchmark"
 description = "Benchmarks for Fannie Mae Data"
-readme = "README.rst"
+readme = "README.md"
 requires-python = ">= 3.8"
 dynamic = ["version"]
 dependencies = [
