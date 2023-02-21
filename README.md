@@ -1,6 +1,8 @@
 ## [WIP] Single-Family Loan Performance
 Dataset is derived from Fannie Mae’s Single-Family Loan Performance Data with all rights reserved by Fannie Mae and made available [here](https://docs.rapids.ai/datasets/mortgage-data) by RAPIDS team. 
 ## Example Results
+Here are preliminary results on M1 SoC across one year and two year dataset variants:
+
 |id|name                         |run_date|total_time_process                           |total_time_cpu    |max_memory_usage|incremental_memory_usage|power_mW|cpu_mJ|dram_energy_sum|datadir|db    |
 |------|-----------------------------|--------|---------------------------------------------|------------------|----------------|------------------------|--------|------|---------------|-------|------|
 |0     |summary                      |20/02/2023 22:17:15|1.7020075409673154                           |3.375095          |333.140625      |164.25                  |12412.0 |15240 |337            |oneyear|duckdb|
