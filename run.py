@@ -1,10 +1,13 @@
 import datetime
 import itertools
 import json
+import multiprocessing
 import os
 import platform
+import sys
 import time
 import timeit
+import traceback
 import warnings
 from pathlib import Path
 from shutil import which
@@ -21,78 +24,57 @@ from benchmark.powercap_rapl import PowercapRaplProfiler
 from benchmark.powermetrics import PowerMetricsProfiler
 
 warnings.filterwarnings("ignore")
+# Fix
+sys.path.append("tpc-queries")
 
-BACKEND = {"polars": ibis.polars.connect(), "duckdb": ibis.duckdb.connect()}
+from ibis_tpc import (h01, h02, h03, h04, h05, h06, h07, h08, h09, h10, h11,
+                      h12, h13, h14, h15, h16, h17, h18, h19, h20, h21, h22)
+
+BACKENDS = {"polars": ibis.polars.connect(), "duckdb": ibis.duckdb.connect()}
+
+QUERIES_TPCH = {
+    "h01": h01.tpc_h01,
+    "h02": h02.tpc_h02,
+    "h03": h03.tpc_h03,
+    "h04": h04.tpc_h04,
+    "h05": h05.tpc_h05,
+    "h06": h06.tpc_h06,
+    "h07": h07.tpc_h07,
+    "h08": h08.tpc_h08,
+    "h09": h09.tpc_h09,
+    "h10": h10.tpc_h10,
+    "h11": h11.tpc_h11,
+    "h12": h12.tpc_h12,
+    "h13": h13.tpc_h13,
+    "h14": h14.tpc_h14,
+    "h15": h15.tpc_h15,
+    "h16": h16.tpc_h16,
+    "h17": h17.tpc_h17,
+    "h18": h18.tpc_h18,
+    "h19": h19.tpc_h19,
+    "h20": h20.tpc_h20,
+    "h21": h21.tpc_h21,
+    "h22": h22.tpc_h22,
+}
 
 
-def create_duckdb(datadir, engine="duckdb"):
-    db = BACKEND.get(engine)
-    perf_path = datadir / "perf/*.parquet"
-    acq_path = datadir / "acq/*.parquet"
-    db.register(f"{perf_path}", "perf")
-    db.register(f"{acq_path}", "acq")
+def setup_tpch_db(datadir, engine="duckdb"):
+    db = BACKENDS.get(engine)
+    tables = [
+        "customer",
+        "lineitem",
+        "nation",
+        "orders",
+        "part",
+        "partsupp",
+        "region",
+        "supplier",
+    ]
+    for t in tables:
+        path = datadir / f"{t}.parquet"
+        db.register(f"{path}", t)
+    db.con.execute("PRAGMA threads=2;")
     return db
-
-
-def summary_query(db):
-    perf = db.table("perf")
-    acq = db.table("acq")
-    acq = acq[acq.loan_id, acq.orig_date.name("year"), acq.borrower_credit_score]
-    joined = acq.inner_join(perf, acq.loan_id == perf.loan_id)
-
-    chargeoffs = (
-        ibis.case()
-        .when(
-            (perf.zero_balance_code.isin(["02", "03", "09", "15"]))
-            & (perf.disposition_date.notnull()),
-            1,
-        )
-        .else_(0)
-        .end()
-        .name("charegoffs")
-    )
-
-    dollar_co = (
-        perf.zero_balance_code.isin(["02", "03", "09", "15"])
-        & (perf.disposition_date.notnull())
-    ).ifelse(perf.current_actual_upb, 0)
-
-    loans = joined.mutate(chargeoffs=chargeoffs, dollar_co=dollar_co).projection(
-        [
-            perf.loan_id,
-            chargeoffs,
-            dollar_co.name("dollar_co"),
-            perf.loan_age,
-            perf.current_actual_upb,
-            acq.year,
-            acq.borrower_credit_score,
-        ]
-    )
-
-    summary = (
-        loans[loans.loan_age > 0]
-        .groupby([loans.year, loans.loan_age])
-        .aggregate(
-            co_count=lambda x: x.charegoffs.cast("int64").sum(),
-            dollar_co=lambda x: x.dollar_co.sum(),
-            avg_credit_score=lambda x: x.borrower_credit_score.mean(),
-            upb_sum=lambda x: x.current_actual_upb.sum(),
-        )
-    )
-    acq_agg = acq.groupby([acq.year]).loan_id.count()
-
-    summary = summary.inner_join(acq_agg, acq_agg.year == summary.year)
-    summary = summary.projection(
-        [
-            summary.year,
-            summary.loan_age,
-            summary["count(loan_id)"],
-            summary.avg_credit_score,
-            summary.upb_sum,
-            summary.dollar_co,
-        ]
-    )
-    return summary
 
 
 def platform_info():
@@ -131,33 +113,23 @@ def is_powercap_available():
         return False
 
 
-def collect_stats(db):
-    return {
-        "total_rows_RHS": db.con.execute("select count(*) from perf").fetchall()[0][0],
-        "row_count_LHS": db.con.execute("select count(*) from acq").fetchall()[0][0],
-    }
-
-
 def aggregate_power_stats(power_results):
     cpus = pd.json_normalize(power_results, ["processor", "clusters", "cpus"])
     clusters = pd.json_normalize(power_results, ["processor", "clusters"])
     total = pd.json_normalize(power_results)
     return {
-        # "idle_ratio_cpus": list(cpus.groupby("cpu").idle_ratio.mean()),
-        # "freq_hz": list(cpus.groupby("cpu").freq_hz.mean()),
+        "idle_ratio_cpus": list(cpus.groupby("cpu").idle_ratio.mean()),
+        "freq_hz": list(cpus.groupby("cpu").freq_hz.mean()),
         "power_mW": sum(list(clusters.groupby("name").mean().power.values)),
-        # "package_energy_sum": int(total["processor.package_energy"].sum()),
+        "package_energy_sum": int(total["processor.package_energy"].sum()),
         "cpu_mJ": int(total["processor.cpu_energy"].sum()),
-        # "dram_energy_sum": int(total["processor.dram_energy"].sum()),
-        # "elapsed_ns": int(total["elapsed_ns"].sum()),
+        "dram_energy_sum": int(total["processor.dram_energy"].sum()),
+        "elapsed_ns": int(total["elapsed_ns"].sum()),
     }
 
 
-QUERIES = {"summary": summary_query}
-
-
-def execute(expr, db):
-    result = db.execute(expr)
+def execute(expr):
+    result = expr.execute()
     return result
 
 
@@ -169,7 +141,6 @@ def profile_run(expression, db):
             execute,
             (
                 expression,
-                db,
             ),
         )
     )
@@ -178,8 +149,9 @@ def profile_run(expression, db):
     return mem, total_time_process, total_time_cpu
 
 
-def run_query(query, db, powermetrics):
-    expression = QUERIES[query](db)
+def run_query(query, powermetrics, datadir, engine):
+    db = setup_tpch_db(datadir, engine)
+    expression = QUERIES_TPCH[query](db)
     if powermetrics and is_powermetrics_available():
         with PowerMetricsProfiler() as power:
             mem, total_time_process, total_time_cpu = profile_run(expression, db)
@@ -201,13 +173,18 @@ def run_query(query, db, powermetrics):
         "total_time_process": total_time_process,
         "total_time_cpu": total_time_cpu,
         "max_memory_usage": max(mem),
-        "incremental_memory_usage": mem[-1] - mem[0],
     }
     run_stats.update(power_cpu)
     return run_stats
 
 
 @click.command()
+@click.option(
+    "--queries",
+    default="h01,h02,h03,h04,h05,h06,h07,h08,h09,h10,h11,h12,h13,h14,h15,h16,h17,h18,h19,h20,h21,h22",
+    show_default=True,
+    help="comma seperated list of questions to run",
+)
 @click.option(
     "--engines",
     default="duckdb",
@@ -226,20 +203,22 @@ def run_query(query, db, powermetrics):
     show_default=True,
     help="comma seperated list of datadirs to run e.g. 2,4,8",
 )
-def main(datadir, powermetrics, engines):
+def main(datadir, powermetrics, engines, queries):
     datadirs = [s for s in datadir.split(",")]
     engines = [s for s in engines.split(",")]
+    queries = [s for s in queries.split(",")]
     runs = []
     for datadir, engine in itertools.product(datadirs, engines):
         datadir = Path(datadir)
-        db = create_duckdb(datadir, engine=engine)
-        stats = [run_query(query, db, powermetrics) for query in QUERIES]
+        stats = [
+            run_query(query, powermetrics, datadir, engine) 
+            for query in queries
+        ]
 
         data = {**platform_info(), "runs": stats, "datadir": datadir, "db": engine}
         runs.append(data)
 
     df = pd.json_normalize(runs, ["runs"], meta=["datadir", "db"])
-    click.echo()
     click.echo(df)
 
 
