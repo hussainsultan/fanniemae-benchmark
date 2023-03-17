@@ -20,10 +20,9 @@ import psutil
 from jinja2 import Template
 from memory_profiler import memory_usage
 
+from benchmark.fanniemae_summary import summary_query
 from benchmark.powercap_rapl import PowercapRaplProfiler
 from benchmark.powermetrics import PowerMetricsProfiler
-from benchmark.fanniemae_summary import summary_query
-
 
 warnings.filterwarnings("ignore")
 # Fix
@@ -141,9 +140,7 @@ def profile_run(expression, db):
     mem = memory_usage(
         (
             execute,
-            (
-                expression,
-            ),
+            (expression,),
         )
     )
     total_time_cpu = time.process_time() - start_time_cpu
@@ -215,9 +212,11 @@ def run_query_fannie(powermetrics, datadir, engine, threads=8):
     run_stats.update(power_cpu)
     return run_stats
 
+
 @click.group()
 def cli():
     pass
+
 
 @click.command()
 @click.option(
@@ -259,15 +258,15 @@ def tpch(datadir, powermetrics, engines, queries, threads):
     for datadir, engine, thread in itertools.product(datadirs, engines, threads):
         datadir = Path(datadir)
         stats = [
-            run_query(query, powermetrics, datadir, engine, thread) 
-            for query in queries
+            run_query(query, powermetrics, datadir, engine, thread) for query in queries
         ]
 
         data = {**platform_info(), "runs": stats, "datadir": datadir, "db": engine}
         runs.append(data)
 
     df = pd.json_normalize(runs, ["runs"], meta=["datadir", "db"])
-    click.echo(df)
+    click.echo(df.to_csv(index=False))
+
 
 @click.command()
 @click.option(
@@ -294,21 +293,19 @@ def tpch(datadir, powermetrics, engines, queries, threads):
     show_default=True,
     help="comma seperated list of datadirs to run e.g. 2,4,8",
 )
-def fanniemae(datadir, powermetrics, engines,threads):
+def fanniemae(datadir, powermetrics, engines, threads):
     datadirs = [s for s in datadir.split(",")]
     engines = [s for s in engines.split(",")]
     threads = [s for s in threads.split(",")]
     runs = []
     for datadir, engine, thread in itertools.product(datadirs, engines, threads):
         datadir = Path(datadir)
-        stats = [
-            run_query_fannie(powermetrics, datadir, engine, thread) 
-        ]
+        stats = [run_query_fannie(powermetrics, datadir, engine, thread)]
         data = {**platform_info(), "runs": stats, "datadir": datadir, "db": engine}
         runs.append(data)
 
     df = pd.json_normalize(runs, ["runs"], meta=["datadir", "db"])
-    click.echo(df)
+    click.echo(df.to_csv(index=False))
 
 
 cli.add_command(tpch)
