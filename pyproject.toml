@@ -1,9 +1,10 @@
 [build-system]
 requires = ["setuptools", "setuptools-scm"]
 build-backend = "setuptools.build_meta"
-
+[tool.setuptools]
+py-modules = []
 [project]
-name = "fanniemae-benchmark"
+name = "benchmark"
 description = "Benchmarks for Fannie Mae Data"
 readme = "README.md"
 requires-python = ">= 3.8"
@@ -19,5 +20,6 @@ dependencies = [
     "memory_profiler",
     "pandas",
     "jinja2",
-    "polars"
+    "polars",
+    "tpc-queries@https://github.com/ibis-project/tpc-queries.git"
 ]

@@ -22,6 +22,8 @@ from memory_profiler import memory_usage
 
 from benchmark.powercap_rapl import PowercapRaplProfiler
 from benchmark.powermetrics import PowerMetricsProfiler
+from benchmark.fanniemae_summary import summary_query
+
 
 warnings.filterwarnings("ignore")
 # Fix
@@ -58,7 +60,7 @@ QUERIES_TPCH = {
 }
 
 
-def setup_tpch_db(datadir, engine="duckdb"):
+def setup_tpch_db(datadir, engine="duckdb", threads=8):
     db = BACKENDS.get(engine)
     tables = [
         "customer",
@@ -73,7 +75,7 @@ def setup_tpch_db(datadir, engine="duckdb"):
     for t in tables:
         path = datadir / f"{t}.parquet"
         db.register(f"{path}", t)
-    db.con.execute("PRAGMA threads=2;")
+    db.con.execute(f"PRAGMA threads={threads};")
     return db
 
 
@@ -149,8 +151,8 @@ def profile_run(expression, db):
     return mem, total_time_process, total_time_cpu
 
 
-def run_query(query, powermetrics, datadir, engine):
-    db = setup_tpch_db(datadir, engine)
+def run_query(query, powermetrics, datadir, engine, threads=8):
+    db = setup_tpch_db(datadir, engine, threads)
     expression = QUERIES_TPCH[query](db)
     if powermetrics and is_powermetrics_available():
         with PowerMetricsProfiler() as power:
@@ -169,6 +171,7 @@ def run_query(query, powermetrics, datadir, engine):
 
     run_stats = {
         "name": query,
+        "threads": threads,
         "run_date": datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
         "total_time_process": total_time_process,
         "total_time_cpu": total_time_cpu,
@@ -178,7 +181,51 @@ def run_query(query, powermetrics, datadir, engine):
     return run_stats
 
 
+def run_query_fannie(powermetrics, datadir, engine, threads=8):
+    db = BACKENDS.get(engine)
+    perf_path = datadir / "perf/*.parquet"
+    acq_path = datadir / "acq/*.parquet"
+    db.register(f"{perf_path}", "perf")
+    db.register(f"{acq_path}", "acq")
+    db.con.execute(f"PRAGMA threads={threads};")
+    expression = summary_query(db)
+    if powermetrics and is_powermetrics_available():
+        with PowerMetricsProfiler() as power:
+            mem, total_time_process, total_time_cpu = profile_run(expression, db)
+        power_cpu = aggregate_power_stats(power.results)
+    elif powermetrics and is_powercap_available():
+        with PowercapRaplProfiler() as power:
+            mem, total_time_process, total_time_cpu = profile_run(expression, db)
+        power_cpu = {
+            "cpu_mJ": power.results / 10**3,
+            "power_mW": power.results / power.total_time / 10**3,
+        }
+    else:
+        mem, total_time_process, total_time_cpu = profile_run(expression, db)
+        power_cpu = {}
+
+    run_stats = {
+        "name": "Summary",
+        "threads": threads,
+        "run_date": datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+        "total_time_process": total_time_process,
+        "total_time_cpu": total_time_cpu,
+        "max_memory_usage": max(mem),
+    }
+    run_stats.update(power_cpu)
+    return run_stats
+
+@click.group()
+def cli():
+    pass
+
 @click.command()
+@click.option(
+    "--threads",
+    default="8",
+    show_default=True,
+    help="comma seperated list of threads to run to run",
+)
 @click.option(
     "--queries",
     default="h01,h02,h03,h04,h05,h06,h07,h08,h09,h10,h11,h12,h13,h14,h15,h16,h17,h18,h19,h20,h21,h22",
@@ -203,15 +250,16 @@ def run_query(query, powermetrics, datadir, engine):
     show_default=True,
     help="comma seperated list of datadirs to run e.g. 2,4,8",
 )
-def main(datadir, powermetrics, engines, queries):
+def tpch(datadir, powermetrics, engines, queries, threads):
     datadirs = [s for s in datadir.split(",")]
     engines = [s for s in engines.split(",")]
     queries = [s for s in queries.split(",")]
+    threads = [int(s) for s in threads.split(",")]
     runs = []
-    for datadir, engine in itertools.product(datadirs, engines):
+    for datadir, engine, thread in itertools.product(datadirs, engines, threads):
         datadir = Path(datadir)
         stats = [
-            run_query(query, powermetrics, datadir, engine) 
+            run_query(query, powermetrics, datadir, engine, thread) 
             for query in queries
         ]
 
@@ -221,6 +269,50 @@ def main(datadir, powermetrics, engines, queries):
     df = pd.json_normalize(runs, ["runs"], meta=["datadir", "db"])
     click.echo(df)
 
+@click.command()
+@click.option(
+    "--threads",
+    default="8",
+    show_default=True,
+    help="comma seperated list of threads to run",
+)
+@click.option(
+    "--engines",
+    default="duckdb",
+    show_default=True,
+    help="comma seperated list of datadirs to run e.g. duckdb, polars",
+)
+@click.option(
+    "--powermetrics/--no-powermetrics",
+    default=False,
+    show_default=True,
+    help="Flag to get cpu and power metrics on OSX",
+)
+@click.option(
+    "--datadir",
+    default="data",
+    show_default=True,
+    help="comma seperated list of datadirs to run e.g. 2,4,8",
+)
+def fanniemae(datadir, powermetrics, engines,threads):
+    datadirs = [s for s in datadir.split(",")]
+    engines = [s for s in engines.split(",")]
+    threads = [s for s in threads.split(",")]
+    runs = []
+    for datadir, engine, thread in itertools.product(datadirs, engines, threads):
+        datadir = Path(datadir)
+        stats = [
+            run_query_fannie(powermetrics, datadir, engine, thread) 
+        ]
+        data = {**platform_info(), "runs": stats, "datadir": datadir, "db": engine}
+        runs.append(data)
+
+    df = pd.json_normalize(runs, ["runs"], meta=["datadir", "db"])
+    click.echo(df)
+
+
+cli.add_command(tpch)
+cli.add_command(fanniemae)
 
 if __name__ == "__main__":
-    main()
+    cli()
