@@ -21,5 +21,4 @@ dependencies = [
     "pandas",
     "jinja2",
     "polars",
-    "tpc-queries@https://github.com/ibis-project/tpc-queries.git"
 ]

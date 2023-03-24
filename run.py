@@ -69,10 +69,10 @@ def setup_tpch_db(datadir, engine="duckdb", threads=8):
         "part",
         "partsupp",
         "region",
-        "supplier",
+        "supplier"
     ]
     for t in tables:
-        path = datadir / f"{t}.parquet"
+        path = datadir/ "raw" / f"{t}.parquet"
         db.register(f"{path}", t)
     db.con.execute(f"PRAGMA threads={threads};")
     return db
@@ -134,36 +134,31 @@ def execute(expr):
     return result
 
 
-def profile_run(expression, db):
+def profile_run(expression):
     start_time_process = timeit.default_timer()
     start_time_cpu = time.process_time()
-    mem = memory_usage(
-        (
-            execute,
-            (expression,),
-        )
-    )
+    data = execute(expression)
     total_time_cpu = time.process_time() - start_time_cpu
     total_time_process = timeit.default_timer() - start_time_process
-    return mem, total_time_process, total_time_cpu
+    return total_time_process, total_time_cpu
 
 
-def run_query(query, powermetrics, datadir, engine, threads=8):
+def run_query(query, powermetrics, datadir, engine, threads=8, comment=""):
     db = setup_tpch_db(datadir, engine, threads)
     expression = QUERIES_TPCH[query](db)
     if powermetrics and is_powermetrics_available():
         with PowerMetricsProfiler() as power:
-            mem, total_time_process, total_time_cpu = profile_run(expression, db)
+            total_time_process, total_time_cpu = profile_run(expression)
         power_cpu = aggregate_power_stats(power.results)
     elif powermetrics and is_powercap_available():
         with PowercapRaplProfiler() as power:
-            mem, total_time_process, total_time_cpu = profile_run(expression, db)
+            total_time_process, total_time_cpu = profile_run(expression)
         power_cpu = {
             "cpu_mJ": power.results / 10**3,
             "power_mW": power.results / power.total_time / 10**3,
         }
     else:
-        mem, total_time_process, total_time_cpu = profile_run(expression, db)
+        total_time_process, total_time_cpu = profile_run(expression)
         power_cpu = {}
 
     run_stats = {
@@ -172,13 +167,13 @@ def run_query(query, powermetrics, datadir, engine, threads=8):
         "run_date": datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
         "total_time_process": total_time_process,
         "total_time_cpu": total_time_cpu,
-        "max_memory_usage": max(mem),
+        "comment": comment,
     }
     run_stats.update(power_cpu)
     return run_stats
 
 
-def run_query_fannie(powermetrics, datadir, engine, threads=8):
+def run_query_fannie(powermetrics, datadir, engine, threads=8, comment=""):
     db = BACKENDS.get(engine)
     perf_path = datadir / "perf/*.parquet"
     acq_path = datadir / "acq/*.parquet"
@@ -188,17 +183,17 @@ def run_query_fannie(powermetrics, datadir, engine, threads=8):
     expression = summary_query(db)
     if powermetrics and is_powermetrics_available():
         with PowerMetricsProfiler() as power:
-            mem, total_time_process, total_time_cpu = profile_run(expression, db)
+            total_time_process, total_time_cpu = profile_run(expression, db)
         power_cpu = aggregate_power_stats(power.results)
     elif powermetrics and is_powercap_available():
         with PowercapRaplProfiler() as power:
-            mem, total_time_process, total_time_cpu = profile_run(expression, db)
+            total_time_process, total_time_cpu = profile_run(expression, db)
         power_cpu = {
             "cpu_mJ": power.results / 10**3,
             "power_mW": power.results / power.total_time / 10**3,
         }
     else:
-        mem, total_time_process, total_time_cpu = profile_run(expression, db)
+        total_time_process, total_time_cpu = profile_run(expression, db)
         power_cpu = {}
 
     run_stats = {
@@ -207,7 +202,7 @@ def run_query_fannie(powermetrics, datadir, engine, threads=8):
         "run_date": datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
         "total_time_process": total_time_process,
         "total_time_cpu": total_time_cpu,
-        "max_memory_usage": max(mem),
+        "comment": comment
     }
     run_stats.update(power_cpu)
     return run_stats
@@ -219,6 +214,18 @@ def cli():
 
 
 @click.command()
+@click.option(
+    "--repeat",
+    default=1,
+    show_default=True,
+    help="Number of benchmark runs",
+)
+@click.option(
+    "--comment",
+    default="",
+    show_default=True,
+    help="helpful comments to be added to benchmark output",
+)
 @click.option(
     "--threads",
     default="8",
@@ -249,22 +256,23 @@ def cli():
     show_default=True,
     help="comma seperated list of datadirs to run e.g. 2,4,8",
 )
-def tpch(datadir, powermetrics, engines, queries, threads):
+def tpch(datadir, powermetrics, engines, queries, threads, comment, repeat):
     datadirs = [s for s in datadir.split(",")]
     engines = [s for s in engines.split(",")]
     queries = [s for s in queries.split(",")]
     threads = [int(s) for s in threads.split(",")]
-    runs = []
-    for datadir, engine, thread in itertools.product(datadirs, engines, threads):
-        datadir = Path(datadir)
-        stats = [
-            run_query(query, powermetrics, datadir, engine, thread) for query in queries
-        ]
+    runs=[]
+    for runno in range(1,repeat+1):
+        for datadir, engine, thread in itertools.product(datadirs, engines, threads):
+            datadir = Path(datadir)
+            stats = [
+                run_query(query, powermetrics, datadir, engine, thread, comment) for query in queries
+            ]
 
-        data = {**platform_info(), "runs": stats, "datadir": datadir, "db": engine}
-        runs.append(data)
+            data = {**platform_info(), "runs": stats, "datadir": datadir, "db": engine, "runno": runno}
+            runs.append(data)
 
-    df = pd.json_normalize(runs, ["runs"], meta=["datadir", "db"])
+    df = pd.json_normalize(runs, ["runs"], meta=["datadir", "db", "runno"])
     click.echo(df.to_csv(index=False))
 
 
