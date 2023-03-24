@@ -19,6 +19,8 @@ class PowercapRapl(Process):
             ) as rapl:
                 energy_uj.append(int(rapl.read()))
             if stop:
+                if energy_uj[0] > energy_uj[-1]:
+                    energy_uj[-1] = energy_uj[-1] + 65532610987
                 stop_time = timeit.default_timer()
                 self.pipe.send((energy_uj[-1] - energy_uj[0], stop_time - start_time))
                 break
