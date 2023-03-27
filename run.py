@@ -31,7 +31,7 @@ sys.path.append("tpc-queries")
 from ibis_tpc import (h01, h02, h03, h04, h05, h06, h07, h08, h09, h10, h11,
                       h12, h13, h14, h15, h16, h17, h18, h19, h20, h21, h22)
 
-BACKENDS = {"polars": ibis.polars.connect(), "duckdb": ibis.duckdb.connect()}
+BACKENDS = {"datafusion": ibis.datafusion.connect(), "duckdb": ibis.duckdb.connect()}
 
 QUERIES_TPCH = {
     "h01": h01.tpc_h01,
@@ -57,7 +57,25 @@ QUERIES_TPCH = {
     "h21": h21.tpc_h21,
     "h22": h22.tpc_h22,
 }
+class Process(multiprocessing.Process):
+    def __init__(self, *args, **kwargs):
+        multiprocessing.Process.__init__(self, *args, **kwargs)
+        self._pconn, self._cconn = multiprocessing.Pipe()
+        self._exception = None
 
+    def run(self):
+        try:
+            multiprocessing.Process.run(self)
+            self._cconn.send(None)
+        except Exception as e:
+            tb = traceback.format_exc()
+            self._cconn.send((e, tb))
+
+    @property
+    def exception(self):
+        if self._pconn.poll():
+            self._exception = self._pconn.recv()
+        return self._exception
 
 def setup_tpch_db(datadir, engine="duckdb", threads=8):
     db = BACKENDS.get(engine)
@@ -119,13 +137,13 @@ def aggregate_power_stats(power_results):
     clusters = pd.json_normalize(power_results, ["processor", "clusters"])
     total = pd.json_normalize(power_results)
     return {
-        "idle_ratio_cpus": list(cpus.groupby("cpu").idle_ratio.mean()),
-        "freq_hz": list(cpus.groupby("cpu").freq_hz.mean()),
+        #"idle_ratio_cpus": list(cpus.groupby("cpu").idle_ratio.mean()),
+        #"freq_hz": list(cpus.groupby("cpu").freq_hz.mean()),
         "power_mW": sum(list(clusters.groupby("name").mean().power.values)),
         "package_energy_sum": int(total["processor.package_energy"].sum()),
-        "cpu_mJ": int(total["processor.cpu_energy"].sum()),
-        "dram_energy_sum": int(total["processor.dram_energy"].sum()),
-        "elapsed_ns": int(total["elapsed_ns"].sum()),
+        #"cpu_mJ": int(total["processor.cpu_energy"].sum()),
+        #"dram_energy_sum": int(total["processor.dram_energy"].sum()),
+        #"elapsed_ns": int(total["elapsed_ns"].sum()),
     }
 
 
@@ -137,7 +155,11 @@ def execute(expr):
 def profile_run(expression):
     start_time_process = timeit.default_timer()
     start_time_cpu = time.process_time()
-    data = execute(expression)
+    p = Process(target=execute, args=(expression,))
+    p.start()
+    p.join()
+    if p.exception:
+        print("Excepted")
     total_time_cpu = time.process_time() - start_time_cpu
     total_time_process = timeit.default_timer() - start_time_process
     return total_time_process, total_time_cpu
